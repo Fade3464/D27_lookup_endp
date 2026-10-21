@@ -29,8 +29,8 @@ the database. Back up the PostgreSQL volume for durable operation.
 Open **http://localhost:18080/lookup-record** without signing in, or use
 **Individual D27 Check** in the user portal. Enter a 10-digit number; formatting
 and a leading US `+1` are normalized. Both campaigns must explicitly return
-`accepted=1` to show **Green light for D27**. Either campaign returning `0`
-shows **Not allowed on D27**. Service failures show **Eligibility not confirmed**
+`accepted=1` to show **Allowed for D27**. Either campaign returning `0`
+shows **Not allowed for D27**. Service failures show a retry message
 and never grant an allowance.
 
 The public page uses `GET /api/individual/session/` for a CSRF token and

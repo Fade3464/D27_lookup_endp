@@ -375,7 +375,7 @@ svg { flex-shrink: 0; }
 .individual-main { width: min(100% - 2rem, 32rem); margin: clamp(2rem, 7vh, 5rem) auto; }
 .individual-intro { margin-bottom: 1.75rem; }
 .individual-intro h1 { font-size: clamp(1.8rem, 5vw, 2.5rem); letter-spacing: -.035em; line-height: 1.15; margin: .75rem 0; }
-.individual-intro > p, .individual-hint, .individual-footnote { color: var(--secondary); }
+.individual-hint { color: var(--secondary); }
 .individual-content { padding: clamp(1.25rem, 4vw, 2rem); }
 .individual-hint { font-size: .8rem; margin: .6rem 0 1.25rem; }
 .individual-submit { width: 100%; }
@@ -387,7 +387,3 @@ svg { flex-shrink: 0; }
 .individual-denied { background: var(--danger-bg); color: var(--danger); }
 .individual-unverified { background: var(--warning-bg); color: var(--warning); }
 .individual-number { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; margin: 1rem 0; }
-.individual-campaigns { list-style: none; padding: 0; margin: 0; }
-.individual-campaigns li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .35rem 0; }
-.individual-time, .individual-footnote { font-size: .75rem; }
-.individual-footnote { margin: 1rem .5rem; }
