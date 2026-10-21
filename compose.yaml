@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-suppression}
+      POSTGRES_USER: ${DB_USER:-suppression}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  pgbouncer:
+    build: ./deploy/pgbouncer
+    environment:
+      DB_NAME: ${DB_NAME:-suppression}
+      DB_USER: ${DB_USER:-suppression}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrate:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
+    volumes:
+      - django_static:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-18080}:80"
+    volumes:
+      - django_static:/var/www/django-static:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  django_static:
