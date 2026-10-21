@@ -52,6 +52,28 @@ Because the external endpoint has no idempotency-key contract, a crash after an
 HTTP request but before saving its response can require repeating that request
 after staff review; exactly-once external delivery cannot be guaranteed.
 
+## Delete a queued scrub job
+
+Use **Delete** on an uploaded, queued, paused, or retry-review job and confirm
+**Delete Job**. Running jobs must be paused and finish their current request
+before deletion. Jobs being preprocessed or exported cannot be deleted while
+that work is active.
+
+Deletion removes the job from the user's dashboard, downloads list, queue, and
+unfinished-file quota. It is a retained `deleted` status: source files, phone
+records, responses, and audit events remain available to administrators. It
+performs no per-number scan or cascade delete, including for large CSVs. Deleted
+jobs cannot be resumed, downloaded, or retrieved through the user APIs. Other
+users' jobs are unaffected. Manual queue pauses and global safety stops remain
+in effect; use **Start Next Queued File** when ready to continue a manually
+paused queue.
+
+The delete, pause/next-file, and safety confirmation dialogs are centered in the
+viewport, with a scroll limit for smaller screens. Deletion requires the job
+owner's authenticated session and CSRF token. Worker claims and deletion share
+the same database locks, so an in-flight claim rejects deletion instead of
+losing its result.
+
 ## Discord
 
 Set `DISCORD_WEBHOOK_URL` in production `.env`. A dedicated notification worker

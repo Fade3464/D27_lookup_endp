@@ -247,6 +247,36 @@ PY
 
 No production webhook is contacted by the automated test suite.
 
+### API returns HTTP 400 while the frontend loads
+
+Static HTML is served by Nginx, so it can work even if Django rejects the
+request hostname. A healthy backend also does not prove that the public domain
+is allowed: the internal health check uses the first configured allowed host.
+Check the actual running Django settings without displaying secrets:
+
+```bash
+d27 exec backend python manage.py shell -c \
+  "from django.conf import settings; print('ALLOWED_HOSTS:', settings.ALLOWED_HOSTS); print('CSRF origins:', settings.CSRF_TRUSTED_ORIGINS)"
+curl -i http://127.0.0.1:18000/api/history/ \
+  -H 'Host: d27desk.peoplegraph.co' -H 'X-Forwarded-Proto: https'
+```
+
+The direct request should return **401**, not 400. If the public domain is
+missing, correct `.env` and recreate the app containers to load it:
+
+```bash
+cd /srv/D27_lookup_endp
+sed -i 's/^DJANGO_ALLOWED_HOSTS=.*/DJANGO_ALLOWED_HOSTS=d27desk.peoplegraph.co/' .env
+sed -i 's|^CSRF_TRUSTED_ORIGINS=.*|CSRF_TRUSTED_ORIGINS=https://d27desk.peoplegraph.co|' .env
+d27 up -d --no-deps --force-recreate backend lookup_worker file_worker alert_worker
+curl -i https://d27desk.peoplegraph.co/api/history/
+```
+
+A simple container restart does not reload changed environment variables. If the
+direct request returns 401 but the HTTPS request returns 400, check the installed
+Nginx site's `proxy_set_header Host d27desk.peoplegraph.co;` directive, then run
+`sudo nginx -t` and reload Nginx. Do not set `ALLOWED_HOSTS=*` to bypass this check.
+
 ## 7. Back up and update
 
 Back up PostgreSQL **and** `var/data/batches` together. Stopping app writers

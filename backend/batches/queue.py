@@ -72,7 +72,20 @@ def control_batch(batch_id, user, action):
     with transaction.atomic():
         engine = engine_lock()
         queue = queue_lock(user.pk)
-        batch = Batch.objects.select_for_update().get(pk=batch_id, user=user)
+        batch = Batch.objects.select_for_update().exclude(status="deleted").get(pk=batch_id, user=user)
+        if action == "delete":
+            # Serialize against worker claims; retain large row sets and audit history.
+            # A tombstone avoids loading/deleting up to a million related records.
+            if (batch.status not in ("uploaded", "queued", "paused", "review") or
+                    (engine.active_batch == batch.pk and engine.active_number_id is not None)):
+                raise ValueError("Pause this job and wait for processing to stop before deleting it.")
+            if queue.active_batch_id == batch.pk:
+                queue.active_batch = None
+                queue.save(update_fields=["active_batch"])
+            batch.status = "deleted"
+            batch.save(update_fields=["status"])
+            Event.objects.create(batch=batch, actor=user, action="deleted")
+            return {"deleted": True}
         if action == "pause":
             if batch.status not in ("queued", "running", "pausing", "paused", "review"):
                 raise ValueError("This file cannot be paused in its current state.")

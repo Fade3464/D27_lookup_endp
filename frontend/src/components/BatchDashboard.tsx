@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from "react"
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Pause, Play, RotateCcw, ShieldAlert, Upload, X } from "lucide-react"
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Pause, Play, RotateCcw, ShieldAlert, Trash2, Upload, X } from "lucide-react"
 import { api, ApiError, type User } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +27,8 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
   const [dragging, setDragging] = useState(false)
   const [decision, setDecision] = useState<{ next: string | null } | null>(null)
   const [confirmSafety, setConfirmSafety] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<Job | null>(null)
+  const deleting = useRef(false)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [raw, setRaw] = useState<unknown>(null)
   const dialog = useRef<HTMLDialogElement>(null)
@@ -46,9 +48,10 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
     return () => { alive = false; clearInterval(timer) }
   }, [page, revision, preview])
   useEffect(() => {
-    if (decision || confirmSafety) dialog.current?.showModal()
-    else dialog.current?.close()
-  }, [decision, confirmSafety])
+    if (decision || confirmSafety || confirmDelete) {
+      if (dialog.current && !dialog.current.open) dialog.current.showModal()
+    } else dialog.current?.close()
+  }, [decision, confirmSafety, confirmDelete])
   function choose(next: File | undefined) {
     setError(""); setNotice("")
     if (!next) return
@@ -79,6 +82,24 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
         setRevision(v => v + 1)
       }
     } catch (e) { handleError(e) } finally { setBusy("") }
+  }
+  async function deleteJob() {
+    if (!confirmDelete || deleting.current) return
+    deleting.current = true
+    const job = confirmDelete
+    setBusy(job.id); setError("")
+    try {
+      if (!preview) await api(`batches/${job.id}/control/`, { action: "delete" })
+      setData(current => current ? { ...current,
+        results: current.results.filter(row => row.id !== job.id),
+        active: current.active.filter(row => row.id !== job.id),
+        count: Math.max(0, current.count - 1),
+      } : current)
+      if (detail?.batch.id === job.id) { setDetail(null); setRaw(null) }
+      setConfirmDelete(null); setNotice("Job deleted.")
+      if (!preview) { setPage(1); setRevision(v => v + 1) }
+    } catch (e) { handleError(e) }
+    finally { deleting.current = false; setBusy("") }
   }
   async function continueNext(start: boolean) {
     setBusy("queue"); setError("")
@@ -115,6 +136,7 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
     {job.status === "review" && <Button size="sm" variant="outline" disabled={Boolean(busy) || data?.safety.paused} onClick={() => control(job, "retry")}><RotateCcw />Retry Errors</Button>}
     {job.status === "export_failed" && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => control(job, "retry_export")}><RotateCcw />Retry Export</Button>}
     {job.status === "completed" && (preview ? <Button size="sm" variant="outline" onClick={() => setNotice("This sample export is for design review only.")}><Download />Download</Button> : <Button size="sm" variant="outline" asChild><a href={job.download_url || "#"}><Download />Download</a></Button>)}
+    {["uploaded", "queued", "paused", "review"].includes(job.status) && <Button size="sm" variant="ghost" className="batch-delete" aria-label={`Delete ${job.name}`} disabled={Boolean(busy)} onClick={() => { setError(""); setConfirmDelete(job) }}><Trash2 />Delete</Button>}
     <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => inspect(job)}>Track<ChevronRight /></Button>
   </div>
   return <div className="batch-dashboard">
@@ -133,8 +155,14 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
       <div className="batch-counts"><span><CheckCircle2 size={13} />{number(job.good_rows)} good</span><span>{number(job.bad_rows)} bad{job.mixed_rows ? ` (${number(job.mixed_rows)} mixed)` : ""}</span><span>{number(job.error_rows)} unresolved errors</span></div><p className="field-hint">{number(job.cleaned_rows)} cleaned · {number(job.rejected_rows)} skipped · {number(job.total_rows)} source rows</p>{job.error && <p className="batch-error">{job.error}</p>}{job.status === "pausing" && <p className="field-hint">The current lookup will finish and save before this file pauses.</p>}{actions(job)}</Card>)}</div>}
     <Card className="history-card"><CardHeader><CardTitle>Files & Downloads</CardTitle><p className="field-hint">Completed exports are prepared once. Each file contains only sqGOOD and sqBAD.</p></CardHeader><div className="table-scroll"><table className="records-table"><thead><tr><th>File</th><th>Status</th><th>Resolved</th><th>Actions</th></tr></thead><tbody>{data?.results.length ? data.results.map(job => <tr key={job.id}><td className="batch-filename"><strong>{job.name}</strong>{job.error && <span>{job.error}</span>}</td><td>{statusNames[job.status]}</td><td>{number(job.resolved_rows)} / {number(job.valid_rows)}</td><td>{actions(job)}</td></tr>) : <tr><td colSpan={4}>No CSV files yet.</td></tr>}</tbody></table></div><div className="history-footer"><span>{data?.count || 0} files · both campaigns must accept for sqGOOD; all other valid decisions go to sqBAD.</span><div className="pagination"><span>{data?.page || 1} / {data?.pages || 1}</span><Button aria-label="Previous files page" variant="ghost" size="icon" disabled={page <= 1 || Boolean(preview)} onClick={() => setPage(v => v - 1)}><ChevronLeft /></Button><Button aria-label="Next files page" variant="ghost" size="icon" disabled={!data || page >= data.pages || Boolean(preview)} onClick={() => setPage(v => v + 1)}><ChevronRight /></Button></div></div></Card>
     {detail && <Card className="batch-detail"><CardHeader className="history-header"><CardTitle>Tracking: {detail.batch.name}</CardTitle><Button variant="ghost" size="icon" aria-label="Close file tracking" onClick={() => { setDetail(null); setRaw(null) }}><X /></Button></CardHeader><CardContent><div className="batch-event-list">{detail.events.map((event, i) => <div key={i}><strong>{event.action.replaceAll("_", " ")}</strong><span>{new Date(event.created_at).toLocaleString()}</span><p>{event.message}</p></div>)}</div><div className="table-scroll"><table className="records-table"><thead><tr><th>CSV Row</th><th>Number</th><th>Result</th><th>Attempts</th><th>Response</th></tr></thead><tbody>{detail.rows.map(row => <tr key={row.sequence}><td>{row.source_row}</td><td>{row.ani}</td><td>{row.status}{row.error && <p className="batch-error">{row.error}</p>}</td><td>{row.attempts}</td><td><Button size="sm" variant="ghost" onClick={() => inspectNumber(row.sequence)}>View Response</Button></td></tr>)}</tbody></table></div>{detail.next_cursor && <Button variant="outline" onClick={() => inspect(detail.batch, detail.next_cursor || 0)}>Next 100 Rows</Button>}{raw !== null && <pre className="json-box">{JSON.stringify(raw, null, 2)}</pre>}</CardContent></Card>}
-    <dialog ref={dialog} className="queue-dialog" aria-labelledby="queue-dialog-title" aria-describedby="queue-dialog-description" onCancel={e => { e.preventDefault(); if (!busy) { if (decision) void continueNext(false); else setConfirmSafety(false) } }}>
-      <h2 id="queue-dialog-title">{confirmSafety ? "Resume all lookup queues?" : "Start the next file?"}</h2><p id="queue-dialog-description">{confirmSafety ? "Only continue after reviewing the cause of the safety stop. Manually paused files stay paused; unresolved errors require retry." : decision?.next ? `The current file is paused or finishing its last lookup. Start ${decision.next} next?` : "There are no other files queued. Your current file stays paused with its progress saved."}</p>{error && <p role="alert" className="batch-error">{error}</p>}<div className="batch-dialog-actions"><Button variant="outline" autoFocus disabled={Boolean(busy)} onClick={() => { if (confirmSafety) setConfirmSafety(false); else void continueNext(false) }}>{confirmSafety ? "Cancel" : "Keep Queue Paused"}</Button>{(confirmSafety || decision?.next) && <Button disabled={Boolean(busy)} onClick={() => confirmSafety ? resumeSafety() : continueNext(true)}>{busy && <Loader2 className="animate-spin" />}{confirmSafety ? "Resume After Review" : "Start Next File"}</Button>}</div>
+    <dialog ref={dialog} className="queue-dialog" aria-labelledby="queue-dialog-title" aria-describedby="queue-dialog-description" onCancel={e => { e.preventDefault(); if (!busy) { if (confirmDelete) setConfirmDelete(null); else if (decision) void continueNext(false); else setConfirmSafety(false) } }}>
+      <h2 id="queue-dialog-title">{confirmDelete ? "Delete scrub job?" : confirmSafety ? "Resume all lookup queues?" : "Start the next file?"}</h2>
+      <p id="queue-dialog-description">{confirmDelete ? `Remove ${confirmDelete.name} from the dashboard and queue? Audit records will be retained.` : confirmSafety ? "Only continue after reviewing the cause of the safety stop. Manually paused files stay paused; unresolved errors require retry." : decision?.next ? `The current file is paused or finishing its last lookup. Start ${decision.next} next?` : "There are no other files queued. Your current file stays paused with its progress saved."}</p>
+      {error && <p role="alert" className="batch-error">{error}</p>}
+      <div className="batch-dialog-actions">
+        <Button variant="outline" autoFocus disabled={Boolean(busy)} onClick={() => { if (confirmDelete) setConfirmDelete(null); else if (confirmSafety) setConfirmSafety(false); else void continueNext(false) }}>{confirmDelete || confirmSafety ? "Cancel" : "Keep Queue Paused"}</Button>
+        {(confirmDelete || confirmSafety || decision?.next) && <Button className={confirmDelete ? "batch-delete-confirm" : undefined} disabled={Boolean(busy)} onClick={() => confirmDelete ? deleteJob() : confirmSafety ? resumeSafety() : continueNext(true)}>{busy && <Loader2 className="animate-spin" />}{confirmDelete ? "Delete Job" : confirmSafety ? "Resume After Review" : "Start Next File"}</Button>}
+      </div>
     </dialog>
   </div>
 }

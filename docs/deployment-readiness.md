@@ -56,3 +56,12 @@ configuration. Upstream HTTP 429 handling is retained.
 Updated Nginx configs passed syntax validation. A 30-request public lookup burst
 reached a mock backend without throttling; login rate limiting remained active.
 No live lookup API calls were made for this configuration change.
+
+Queued-job deletion verification: 58 PostgreSQL tests discovered, 57 passed,
+with the opt-in large-file test skipped. This includes a concurrent worker
+claim versus deletion test. The quick SQLite suite passed 55 tests with three
+PostgreSQL/large-file skips. Frontend build and component checks passed for
+delete/cancel/Escape, conflicts, dashboard refresh, pause/safety dialogs, and
+preview isolation. The new status migration is `batches.0002_alter_batch_status`.
+Deleted jobs retain their audit data and are excluded from user APIs and quota.
+No live lookup or Discord requests were made for these checks.

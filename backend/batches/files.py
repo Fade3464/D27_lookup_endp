@@ -65,7 +65,7 @@ def save_upload(user, uploaded):
                 file.write(chunk)
         with transaction.atomic():
             queue_lock(user.pk)
-            open_batches = Batch.objects.filter(user=user).exclude(status__in=["completed", "invalid"]).count()
+            open_batches = Batch.objects.filter(user=user).exclude(status__in=["completed", "invalid", "deleted"]).count()
             if open_batches >= settings.BATCH_MAX_OPEN_FILES:
                 raise ValueError("Too many unfinished CSV files. Finish existing files before uploading more.")
             batch = Batch.objects.create(id=batch_id, user=user, original_name=Path(uploaded.name).name[:255],

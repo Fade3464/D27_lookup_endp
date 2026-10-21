@@ -11,14 +11,53 @@ from django.db import close_old_connections, connection, connections
 from django.test import TransactionTestCase, override_settings
 
 from batches.files import build_export, claim_file_task, export_path, import_csv, save_upload
-from batches.models import Batch, Number
-from batches.queue import claim_number, finish_number
+from batches.models import Batch, Number, Engine
+from batches.queue import claim_number, finish_number, control_batch
 from batches.upstream import Result
 
 
 @skipUnless(connection.vendor == "postgresql", "PostgreSQL row-lock test")
 @override_settings(BATCH_LOOKUP_INTERVAL=0)
 class ConcurrencyTests(TransactionTestCase):
+    def test_delete_and_worker_claim_are_serialized(self):
+        from batches.models import UserQueue
+        user = get_user_model().objects.create_user("delete-race")
+        batch = Batch.objects.create(user=user, original_name="test.csv", source_sha256="", status="queued", valid_rows=1)
+        Number.objects.create(batch=batch, sequence=1, source_row=1, ani="2345678901")
+        UserQueue.objects.create(user=user)
+        Engine.objects.create(pk=1)
+        barrier = threading.Barrier(2)
+        results, errors = {}, []
+        def run(action):
+            try:
+                close_old_connections()
+                barrier.wait(timeout=10)
+                if action == "claim":
+                    results[action] = claim_number()
+                else:
+                    try:
+                        results[action] = control_batch(batch.pk, user, "delete")
+                    except ValueError:
+                        results[action] = "busy"
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        threads = [threading.Thread(target=run, args=(action,)) for action in ("claim", "delete")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        batch.refresh_from_db()
+        if results["claim"] is None:
+            self.assertEqual(results["delete"], {"deleted": True})
+            self.assertEqual(batch.status, "deleted")
+        else:
+            self.assertEqual(results["delete"], "busy")
+            self.assertEqual(batch.status, "running")
+
     def test_two_workers_cannot_claim_two_numbers_simultaneously(self):
         from batches.models import UserQueue
         user = get_user_model().objects.create_user("concurrent")

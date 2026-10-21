@@ -17,7 +17,7 @@ from django.utils import timezone
 from batches.files import build_export, claim_file_task, clean_phone, export_path, import_csv, save_upload
 from batches.models import Alert, Batch, Engine, Event, Failure, Number, UserQueue
 from batches.notifications import deliver_one
-from batches.queue import claim_number, clear_safety, continue_queue, control_batch, finish_number
+from batches.queue import claim_number, clear_safety, continue_queue, control_batch, finish_number, pause_all
 from batches.upstream import Result, lookup_number
 from checker.tests.upstream import EXAMPLE_RESPONSE
 
@@ -267,6 +267,81 @@ class BatchTests(TestCase):
         csrf = Client(enforce_csrf_checks=True)
         csrf.force_login(self.user)
         self.assertEqual(csrf.post("/api/batches/upload/", {"file": SimpleUploadedFile("a.csv", b"2345678901")}).status_code, 403)
+
+    def test_delete_removes_queued_job_from_portal_but_retains_audit_without_scanning_rows(self):
+        first = self.upload()
+        second = self.upload()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.post(f"/api/batches/{first.pk}/control/", {"action": "delete"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any('batches_number' in query["sql"].lower() for query in queries))
+        first.refresh_from_db()
+        self.assertEqual(first.status, "deleted")
+        self.assertEqual(Number.objects.filter(batch=first).count(), 2)
+        self.assertTrue(Event.objects.filter(batch=first, action="deleted", actor=self.user).exists())
+        dashboard = self.client.get("/api/batches/").json()
+        self.assertEqual(dashboard["count"], 1)
+        self.assertEqual([row["id"] for row in dashboard["active"]], [str(second.pk)])
+        for suffix in ["", "download/", "numbers/1/"]:
+            self.assertEqual(self.client.get(f"/api/batches/{first.pk}/{suffix}").status_code, 404)
+        for action in ["delete", "resume", "retry"]:
+            self.assertEqual(self.client.post(f"/api/batches/{first.pk}/control/", {"action": action}, content_type="application/json").status_code, 404)
+        self.assertEqual(claim_number()["batch_id"], second.pk)
+
+    def test_delete_uploaded_job_releases_quota_and_prevents_file_claim(self):
+        with override_settings(BATCH_MAX_OPEN_FILES=1):
+            first = save_upload(self.user, SimpleUploadedFile("first.csv", b"2345678901"))
+            control_batch(first.pk, self.user, "delete")
+            second = save_upload(self.user, SimpleUploadedFile("second.csv", b"2345678902"))
+        self.assertEqual(claim_file_task().pk, second.pk)
+
+    def test_delete_rejects_processing_and_in_flight_jobs(self):
+        batch = self.upload()
+        for status in ["running", "pausing", "preprocessing", "export_pending", "exporting", "export_failed", "completed", "invalid"]:
+            Batch.objects.filter(pk=batch.pk).update(status=status)
+            with self.subTest(status=status), self.assertRaises(ValueError):
+                control_batch(batch.pk, self.user, "delete")
+        Batch.objects.filter(pk=batch.pk).update(status="queued")
+        claim_number()
+        # Safety-paused jobs may still have an uncertain in-flight request.
+        Batch.objects.filter(pk=batch.pk).update(status="paused")
+        with self.assertRaises(ValueError):
+            control_batch(batch.pk, self.user, "delete")
+        self.assertFalse(Event.objects.filter(batch=batch, action="deleted").exists())
+
+    def test_delete_paused_job_preserves_manual_queue_decision(self):
+        first = self.upload()
+        second = self.upload()
+        control_batch(first.pk, self.user, "pause")
+        control_batch(first.pk, self.user, "delete")
+        queue = UserQueue.objects.get(user=self.user)
+        self.assertFalse(queue.enabled)
+        self.assertTrue(queue.awaiting_decision)
+        self.assertIsNone(queue.active_batch_id)
+        self.assertIsNone(claim_number())
+        continue_queue(self.user, True)
+        self.assertEqual(claim_number()["batch_id"], second.pk)
+
+    def test_delete_does_not_clear_global_safety_stop(self):
+        batch = self.upload()
+        pause_all("Test safety stop")
+        control_batch(batch.pk, self.user, "delete")
+        self.assertTrue(Engine.objects.get().paused)
+        self.assertIsNone(claim_number())
+
+    def test_delete_requires_owner_authentication_post_and_csrf(self):
+        batch = self.upload()
+        url = f"/api/batches/{batch.pk}/control/"
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.post(url, {"action": "delete"}, content_type="application/json").status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.post(url, {"action": "delete"}, content_type="application/json").status_code, 401)
+        csrf = Client(enforce_csrf_checks=True)
+        csrf.force_login(self.user)
+        self.assertEqual(csrf.post(url, {"action": "delete"}, content_type="application/json").status_code, 403)
+        self.assertEqual(csrf.get(url).status_code, 405)
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, "queued")
 
     def test_webhook_unconfigured_and_failed_delivery_never_unpause_engine(self):
         Engine.objects.create(paused=True)

@@ -117,3 +117,14 @@ only in `/tmp`, without adding application dependencies.
 Visual browser verification, zoom reflow and assistive-technology behavior require
 an available browser; those checks are not claimed from source inspection or DOM
 component tests alone.
+
+## Scrub job deletion and dialogs
+
+Queued/paused job deletion uses a short confirmation with Cancel focused first.
+The shared native dialog for deletion, pause/next-file decisions, and safety
+review uses fixed viewport positioning, zero insets, automatic margins, and
+fit-content height. Its maximum height and scrolling keep controls reachable
+on smaller screens. Color is accompanied by a Delete label and trash icon.
+Component checks cover cancellation/Escape, confirmed removal, server conflicts,
+retry, and offline preview isolation. No browser was connected for screenshot
+or rendered geometry verification in this session.

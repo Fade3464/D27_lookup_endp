@@ -41,14 +41,14 @@ def upload(request):
 @require_GET
 @authenticated
 def dashboard(request):
-    jobs = Batch.objects.filter(user=request.user).order_by("-created_at", "-id")
+    jobs = Batch.objects.filter(user=request.user).exclude(status="deleted").order_by("-created_at", "-id")
     page = Paginator(jobs, 30).get_page(request.GET.get("page", "1"))
     queue = UserQueue.objects.filter(user=request.user).first()
     engine = Engine.objects.filter(pk=1).first()
     alert = Alert.objects.order_by("-id").first()
     return JsonResponse({"results": [serialize(b) for b in page], "count": page.paginator.count,
                          "active": [serialize(b) for b in Batch.objects.filter(user=request.user)
-                                    .exclude(status__in=["completed", "invalid"])[:settings.BATCH_MAX_OPEN_FILES]],
+                                    .exclude(status__in=["completed", "invalid", "deleted"])[:settings.BATCH_MAX_OPEN_FILES]],
                          "page": page.number, "pages": page.paginator.num_pages,
                          "queue": {"enabled": queue.enabled if queue else True,
                                    "awaiting_decision": queue.awaiting_decision if queue else False},
@@ -100,7 +100,7 @@ def resume_safety(request):
 @require_GET
 @authenticated
 def details(request, batch_id):
-    batch = Batch.objects.filter(pk=batch_id, user=request.user).first()
+    batch = Batch.objects.filter(pk=batch_id, user=request.user).exclude(status="deleted").first()
     if not batch:
         return JsonResponse({"error": "File not found."}, status=404)
     try:
@@ -116,7 +116,7 @@ def details(request, batch_id):
 @require_GET
 @authenticated
 def number_detail(request, batch_id, sequence):
-    batch = Batch.objects.filter(pk=batch_id, user=request.user).first()
+    batch = Batch.objects.filter(pk=batch_id, user=request.user).exclude(status="deleted").first()
     if not batch:
         return JsonResponse({"error": "File not found."}, status=404)
     row = Number.objects.filter(batch=batch, sequence=sequence).values().first()
@@ -131,7 +131,7 @@ def number_detail(request, batch_id, sequence):
 @require_GET
 @authenticated
 def download(request, batch_id):
-    batch = Batch.objects.filter(pk=batch_id, user=request.user).first()
+    batch = Batch.objects.filter(pk=batch_id, user=request.user).exclude(status="deleted").first()
     if not batch:
         return JsonResponse({"error": "File not found."}, status=404)
     if batch.status != "completed":
