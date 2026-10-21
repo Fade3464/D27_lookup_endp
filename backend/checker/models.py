@@ -3,6 +3,25 @@ from django.conf import settings
 from django.db import models
 
 
+class IndividualLookup(models.Model):
+    """Public checks have private, staff-only audit records; no public history API."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    ani = models.CharField(max_length=10, db_index=True)
+    status = models.CharField(max_length=16, default="pending", choices=[
+        ("pending", "Pending"), ("allowed", "Allowed"), ("not_allowed", "Not allowed"), ("error", "Unverified")])
+    accepted_1 = models.PositiveSmallIntegerField(null=True, blank=True)
+    accepted_2 = models.PositiveSmallIntegerField(null=True, blank=True)
+    http_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    raw_response = models.TextField(blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
 class Campaign(models.Model):
     campaign_id = models.CharField(max_length=64, unique=True)
     label = models.CharField(max_length=120)

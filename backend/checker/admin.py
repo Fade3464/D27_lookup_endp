@@ -1,9 +1,27 @@
 from django.contrib import admin
-from .models import Campaign, Lookup
+from .models import Campaign, Lookup, IndividualLookup
 
 admin.site.site_header = "D27 Operations"
 admin.site.site_title = "D27 Admin"
 admin.site.index_title = "Users, campaigns & lookup records"
+
+
+@admin.register(IndividualLookup)
+class IndividualLookupAdmin(admin.ModelAdmin):
+    list_display = ["id", "ani", "status", "accepted_1", "accepted_2", "user", "created_at"]
+    list_filter = ["status", "created_at"]
+    search_fields = ["ani", "user__username"]
+    list_select_related = ["user"]
+    readonly_fields = [field.name for field in IndividualLookup._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Campaign)

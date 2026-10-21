@@ -11,7 +11,7 @@ CSRF_TRUSTED_ORIGINS = [v for v in os.getenv("CSRF_TRUSTED_ORIGINS", "").split("
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
-    "axes", "checker",
+    "axes", "checker", "batches",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -92,3 +92,20 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 16384
 LOOKUP_URL = "https://one.marstools.co/d27supressioncheck/ping.php"
 LOOKUP_TIMEOUT = 20
+
+# Files live outside the public document root. Downloads are authorized by Django
+# and then served by Nginx; the source CSVs never have a public URL.
+BATCH_DATA_ROOT = Path(os.getenv("BATCH_DATA_ROOT", str(BASE_DIR / "data")))
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
+BATCH_MAX_UPLOAD_BYTES = int(os.getenv("BATCH_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+BATCH_MAX_NUMBERS = int(os.getenv("BATCH_MAX_NUMBERS", "1000000"))
+BATCH_MAX_CSV_RECORDS = int(os.getenv("BATCH_MAX_CSV_RECORDS", "2000000"))
+BATCH_CSV_FIELD_LIMIT = 256 * 1024
+BATCH_MAX_OPEN_FILES = int(os.getenv("BATCH_MAX_OPEN_FILES", "10"))
+BATCH_CHUNK_SIZE = 5000
+BATCH_FILE_LEASE_SECONDS = 180
+BATCH_MAX_RESPONSE_BYTES = 1024 * 1024
+BATCH_LOOKUP_INTERVAL = max(.1, float(os.getenv("BATCH_LOOKUP_INTERVAL", "1")))
+BATCH_ERROR_LIMIT = 10
+BATCH_ACCEL_DOWNLOADS = os.getenv("BATCH_ACCEL_DOWNLOADS", "0") == "1"
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")

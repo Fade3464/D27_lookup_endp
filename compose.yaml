@@ -44,11 +44,56 @@ services:
     environment:
       DB_HOST: pgbouncer
       DB_PORT: 6432
+      BATCH_ACCEL_DOWNLOADS: "1"
+    volumes:
+      - batch_data:/app/data
     depends_on:
       pgbouncer:
         condition: service_started
       migrate:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  lookup_worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+    command: python manage.py batch_worker --role lookup
+    volumes:
+      - batch_data:/app/data
+    depends_on:
+      backend:
+        condition: service_started
+    stop_grace_period: 90s
+    restart: unless-stopped
+
+  file_worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+    command: python manage.py batch_worker --role files
+    volumes:
+      - batch_data:/app/data
+    depends_on:
+      backend:
+        condition: service_started
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+  alert_worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+    command: python manage.py batch_worker --role alerts
+    depends_on:
+      backend:
+        condition: service_started
     restart: unless-stopped
 
   web:
@@ -57,6 +102,7 @@ services:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-18080}:80"
     volumes:
       - django_static:/var/www/django-static:ro
+      - batch_data:/var/www/batch-data:ro
     depends_on:
       - backend
     restart: unless-stopped
@@ -64,3 +110,4 @@ services:
 volumes:
   postgres_data:
   django_static:
+  batch_data:

@@ -48,7 +48,8 @@ def read_json(request):
 
 def user_data(user):
     return {"username": user.get_username(), "is_staff": user.is_staff,
-            "display_name": user.get_full_name() or user.get_username()}
+            "display_name": user.get_full_name() or user.get_username(),
+            "can_resume_safety": user.is_staff and user.has_perm("batches.resume_safety_stop")}
 
 
 @require_GET

@@ -1,4 +1,4 @@
-export type User = { username: string; display_name: string; is_staff: boolean }
+export type User = { username: string; display_name: string; is_staff: boolean; can_resume_safety?: boolean }
 export type Campaign = { campaign_id: string; label: string }
 export type Lookup = {
   id: string; ani: string; campaign_id: string; campaign_label: string; username: string;
@@ -17,8 +17,8 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     response = await fetch(`/api/${path}`, {
       credentials: "same-origin", cache: "no-store",
       method: body === undefined ? "GET" : "POST",
-      headers: body === undefined ? {} : { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined ? {} : body instanceof FormData ? { "X-CSRFToken": csrfToken } : { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     })
   } catch { throw new ApiError("Unable to connect. Check your connection and try again.", 0) }
   let data

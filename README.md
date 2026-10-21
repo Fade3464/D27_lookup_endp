@@ -24,7 +24,46 @@ an existing file. Leave `.env` out of version control. `docker compose down`
 stops the app and keeps records. Do not use `down -v` unless you intend to delete
 the database. Back up the PostgreSQL volume for durable operation.
 
+## Public individual D27 check
+
+Open **http://localhost:18080/lookup-record** without signing in, or use
+**Individual D27 Check** in the user portal. Enter a 10-digit number; formatting
+and a leading US `+1` are normalized. Both campaigns must explicitly return
+`accepted=1` to show **Green light for D27**. Either campaign returning `0`
+shows **Not allowed on D27**. Service failures show **Eligibility not confirmed**
+and never grant an allowance.
+
+The public page uses `GET /api/individual/session/` for a CSRF token and
+`POST /api/individual/check/` with `{"ani":"2345678901"}`. Successful decisions
+return HTTP 200; invalid input returns 400, upstream rate limits 429, other
+upstream failures 502, and an active global safety pause 503. Nginx limits
+public submissions to 10/minute per IP with a small burst; keep Django private
+behind this proxy. Individual checks run on demand, separately from CSV queues,
+and respect an existing global safety pause. They do not advance CSV progress.
+
+Attempts and raw responses are retained in the read-only **Individual lookups**
+Django admin view, with an optional signed-in user. There is no public history
+or record retrieval endpoint. Existing portal, CSV, and history APIs still
+require authentication. The design preview remains offline.
+
+## UI design review
+
+Open **http://localhost:18080/design-preview** to review the Apple-inspired UI
+without an account. The preview uses fictional, in-memory records and makes no
+API requests. Its selector shows accepted, suppressed, error and empty states;
+the sign-in screen, history and account layout are also available for review.
+
+The community Apple Design skill is downloaded at `skills/apple-design/` and
+referenced by `AGENTS.md` for future design work. Design decisions, measured
+contrast ratios and verification limits are recorded in `docs/ui-design.md`.
+The real app at `/` retains its existing authentication and API integration.
+
 ## What gets recorded
+
+The **CSV Queue** dashboard now accepts CSV uploads, cleans the first column,
+processes each user's queue, tracks progress, and prepares downloads. See
+[CSV queue operation and deployment](docs/csv-queue.md) for cleanup rules,
+pause/resume, safety stops, Discord, storage and large-file validation.
 
 The fixed upstream endpoint is:
 
