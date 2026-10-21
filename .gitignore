@@ -9,3 +9,6 @@ dist/
 staticfiles/
 .DS_Store
 backend/data/
+
+# Production bind-mounted uploads, exports, and published frontend/static files.
+var/

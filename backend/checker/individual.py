@@ -1,4 +1,4 @@
-"""Anonymous single-number checks. CSRF and reverse-proxy rate limits still apply."""
+"""Anonymous single-number checks. CSRF protection applies; no application rate limit."""
 import logging
 
 from django.http import JsonResponse

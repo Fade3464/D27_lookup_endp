@@ -36,15 +36,21 @@ and never grant an allowance.
 The public page uses `GET /api/individual/session/` for a CSRF token and
 `POST /api/individual/check/` with `{"ani":"2345678901"}`. Successful decisions
 return HTTP 200; invalid input returns 400, upstream rate limits 429, other
-upstream failures 502, and an active global safety pause 503. Nginx limits
-public submissions to 10/minute per IP with a small burst; keep Django private
-behind this proxy. Individual checks run on demand, separately from CSV queues,
+upstream failures 502, and an active global safety pause 503. The public endpoint has no application or Nginx request rate limit. Keep Django
+private behind the host proxy. Individual checks run on demand, separately from CSV queues,
 and respect an existing global safety pause. They do not advance CSV progress.
 
 Attempts and raw responses are retained in the read-only **Individual lookups**
 Django admin view, with an optional signed-in user. There is no public history
 or record retrieval endpoint. Existing portal, CSV, and history APIs still
 require authentication. The design preview remains offline.
+
+## Production deployment
+
+Use the standalone [production Compose stack](compose.production.yaml) with
+**host Nginx**. The [deployment guide](docs/production-deployment.md) covers TLS,
+configuration, startup, verification, updates, and backups. The host site config
+is [deploy/nginx/d27-production.conf](deploy/nginx/d27-production.conf).
 
 ## UI design review
 

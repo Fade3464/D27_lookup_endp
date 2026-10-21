@@ -1,0 +1,154 @@
+# Standalone production stack: docker compose -f compose.production.yaml ...
+# Nginx runs on the host. There is no Nginx service in this stack.
+name: d27-production
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-runtime: &runtime
+  image: d27-backend:${D27_RELEASE:-local}
+  build: ./backend
+  env_file: .env
+  environment: &runtime-environment
+    DJANGO_DEBUG: "0"
+    TRUST_PROXY_HTTPS: "1"
+    SECURE_SSL_REDIRECT: "1"
+    DB_HOST: pgbouncer
+    DB_PORT: "6432"
+    BATCH_DATA_ROOT: /app/data
+    BATCH_ACCEL_DOWNLOADS: "1"
+  volumes:
+    - ./var/data/batches:/app/data
+  logging: *logging
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-suppression}
+      POSTGRES_USER: ${DB_USER:-suppression}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  pgbouncer:
+    build: ./deploy/pgbouncer
+    environment:
+      DB_NAME: ${DB_NAME:-suppression}
+      DB_USER: ${DB_USER:-suppression}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  init_storage:
+    <<: *runtime
+    user: root
+    environment: {}
+    volumes:
+      - ./var/data/batches:/app/data
+      - ./var/www/static:/app/staticfiles
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p /app/data/sources /app/data/exports /app/staticfiles
+        chown -R app:app /app/data /app/staticfiles
+        chmod 755 /app/data /app/data/exports /app/staticfiles
+        chmod 700 /app/data/sources
+
+  frontend_build:
+    image: d27-frontend-build:${D27_RELEASE:-local}
+    build:
+      context: ./frontend
+      target: build
+    entrypoint: ["sh", "/publish-frontend.sh"]
+    volumes:
+      - ./var/www/frontend:/output
+      - ./deploy/publish-frontend.sh:/publish-frontend.sh:ro
+    logging: *logging
+
+  migrate:
+    <<: *runtime
+    environment:
+      <<: *runtime-environment
+      DB_HOST: postgres
+      DB_PORT: "5432"
+    volumes:
+      - ./var/www/static:/app/staticfiles
+    command: sh -ec 'python manage.py migrate --noinput; python manage.py collectstatic --noinput'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init_storage:
+        condition: service_completed_successfully
+
+  backend:
+    <<: *runtime
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+      frontend_build:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          host=os.environ['DJANGO_ALLOWED_HOSTS'].split(',')[0];
+          req=urllib.request.Request('http://127.0.0.1:8000/api/individual/session/',
+          headers={'Host':host,'X-Forwarded-Proto':'https'});
+          urllib.request.urlopen(req,timeout=5).close()
+      interval: 30s
+      timeout: 6s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  lookup_worker:
+    <<: *runtime
+    command: python manage.py batch_worker --role lookup
+    depends_on:
+      backend:
+        condition: service_healthy
+    stop_grace_period: 90s
+    restart: unless-stopped
+
+  file_worker:
+    <<: *runtime
+    command: python manage.py batch_worker --role files
+    depends_on:
+      backend:
+        condition: service_healthy
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+  alert_worker:
+    <<: *runtime
+    volumes: []
+    command: python manage.py batch_worker --role alerts
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
