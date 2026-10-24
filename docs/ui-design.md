@@ -128,3 +128,14 @@ on smaller screens. Color is accompanied by a Delete label and trash icon.
 Component checks cover cancellation/Escape, confirmed removal, server conflicts,
 retry, and offline preview isolation. No browser was connected for screenshot
 or rendered geometry verification in this session.
+
+## Partial progress downloads
+
+Paused/review jobs with resolved results offer Prepare Partial CSV. A disabled
+Preparing Partial CSV action indicates background work, and a ready download
+shows its frozen row count. A newer snapshot can be prepared after further
+progress and another pause. Failures show Retry Partial CSV. Zero-result and
+still-pausing jobs cannot request a new snapshot. Inline feedback identifies
+excluded pending/error rows; no extra confirmation modal is used. Preview
+controls remain in memory and make no API requests. Component checks covered
+these states; screenshot/layout verification was not performed in this session.

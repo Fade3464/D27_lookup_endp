@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Alert, Batch, Engine, Event, Failure, Number, UserQueue
+from .models import Alert, Batch, Engine, Event, Failure, Number, PartialExport, UserQueue
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -51,3 +51,9 @@ class AlertAdmin(ReadOnlyAdmin):
 
 admin.site.register(Engine, ReadOnlyAdmin)
 admin.site.register(UserQueue, ReadOnlyAdmin)
+
+
+@admin.register(PartialExport)
+class PartialExportAdmin(ReadOnlyAdmin):
+    list_display = ["id", "batch_id", "status", "resolved_rows", "created_at", "ready_at"]
+    list_filter = ["status"]

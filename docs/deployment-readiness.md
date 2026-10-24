@@ -65,3 +65,19 @@ delete/cancel/Escape, conflicts, dashboard refresh, pause/safety dialogs, and
 preview isolation. The new status migration is `batches.0002_alter_batch_status`.
 Deleted jobs retain their audit data and are excluded from user APIs and quota.
 No live lookup or Discord requests were made for these checks.
+
+Partial-progress export verification — 24 October 2026: all **75 PostgreSQL
+tests passed**, including concurrent request/publication, single-worker claims,
+and the 500,000-row import/partial-export/resume/final-export case. That scale
+test froze a 300,000-result snapshot, simulated completion of the remaining
+200,000 rows, and verified both the unchanged partial CSV and final full CSV.
+No live lookup requests were made.
+
+The production frontend build and component checks passed for preparation,
+polling, download links, retained snapshots after resume, newer snapshots,
+retry, empty-result/pausing guards, and offline preview behavior. An actual
+local Nginx HTTP check passed for preparation by the background file worker,
+exact CSV contents, repeated cached downloads, owner authentication,
+internal-path denial, and preserving the paused state. Temporary HTTP fixtures
+were removed. Deploy migration `batches.0003_partialexport` and rebuild/restart
+the backend/file worker and frontend using the production update steps.

@@ -5,11 +5,12 @@ from django.views.decorators.http import require_GET, require_POST
 
 from checker.views import authenticated, read_json
 from .files import export_path, save_upload
-from .models import Alert, Batch, Engine, Event, Failure, Number, UserQueue
+from .models import Alert, Batch, Engine, Event, Failure, Number, PartialExport, UserQueue
+from .partial_exports import current_partials, partial_path, request_partial, serialize_partial
 from .queue import clear_safety, continue_queue, control_batch
 
 
-def serialize(batch):
+def serialize(batch, partial=None):
     resolved = batch.good_rows + batch.bad_rows
     return {
         "id": str(batch.pk), "name": batch.original_name, "status": batch.status,
@@ -21,6 +22,7 @@ def serialize(batch):
         "error": batch.error_message, "created_at": batch.created_at.isoformat(),
         "export_bytes": batch.export_bytes, "export_sha256": batch.export_sha256,
         "download_url": f"/api/batches/{batch.pk}/download/" if batch.status == "completed" else None,
+        "partial_export": serialize_partial(partial) if partial else None,
     }
 
 
@@ -46,9 +48,12 @@ def dashboard(request):
     queue = UserQueue.objects.filter(user=request.user).first()
     engine = Engine.objects.filter(pk=1).first()
     alert = Alert.objects.order_by("-id").first()
-    return JsonResponse({"results": [serialize(b) for b in page], "count": page.paginator.count,
-                         "active": [serialize(b) for b in Batch.objects.filter(user=request.user)
-                                    .exclude(status__in=["completed", "invalid", "deleted"])[:settings.BATCH_MAX_OPEN_FILES]],
+    jobs = list(page)
+    active = list(Batch.objects.filter(user=request.user)
+                  .exclude(status__in=["completed", "invalid", "deleted"])[:settings.BATCH_MAX_OPEN_FILES])
+    partials = current_partials(jobs + active)
+    return JsonResponse({"results": [serialize(b, partials.get(b.pk)) for b in jobs], "count": page.paginator.count,
+                         "active": [serialize(b, partials.get(b.pk)) for b in active],
                          "page": page.number, "pages": page.paginator.num_pages,
                          "queue": {"enabled": queue.enabled if queue else True,
                                    "awaiting_decision": queue.awaiting_decision if queue else False},
@@ -110,7 +115,7 @@ def details(request, batch_id):
     rows = list(Number.objects.filter(batch=batch, sequence__gt=after).order_by("sequence").values(
         "sequence", "source_row", "ani", "status", "attempts", "accepted_1", "accepted_2", "http_code", "error")[:100])
     events = list(Event.objects.filter(batch=batch).values("action", "message", "created_at")[:50])
-    return JsonResponse({"batch": serialize(batch), "rows": rows, "next_cursor": rows[-1]["sequence"] if len(rows) == 100 else None, "events": events})
+    return JsonResponse({"batch": serialize(batch, current_partials([batch]).get(batch.pk)), "rows": rows, "next_cursor": rows[-1]["sequence"] if len(rows) == 100 else None, "events": events})
 
 
 @require_GET
@@ -147,4 +152,44 @@ def download(request, batch_id):
         response = FileResponse(path.open("rb"), as_attachment=True, filename=f"d27-{batch.pk}.csv", content_type="text/csv")
     response["ETag"] = f'"{batch.export_sha256}"'
     Event.objects.create(batch=batch, actor=request.user, action="downloaded")
+    return response
+
+
+@require_POST
+@authenticated
+def prepare_partial(request, batch_id):
+    try:
+        snapshot = request_partial(batch_id, request.user)
+    except Batch.DoesNotExist:
+        return JsonResponse({"error": "File not found."}, status=404)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=409)
+    return JsonResponse(serialize_partial(snapshot), status=200 if snapshot.status == "ready" else 202)
+
+
+@require_GET
+@authenticated
+def download_partial(request, batch_id, snapshot_id):
+    batch = Batch.objects.filter(pk=batch_id, user=request.user).exclude(status="deleted").first()
+    if batch is None:
+        return JsonResponse({"error": "File not found."}, status=404)
+    snapshot = PartialExport.objects.filter(pk=snapshot_id, batch=batch).first()
+    if snapshot is None:
+        return JsonResponse({"error": "Partial export not found."}, status=404)
+    if snapshot.status != "ready":
+        return JsonResponse({"error": "The partial CSV is not ready yet."}, status=409)
+    path = partial_path(snapshot)
+    if not path.is_file():
+        return JsonResponse({"error": "The partial CSV is missing. Prepare it again."}, status=503)
+    filename = f"d27-{batch.pk}-partial-{snapshot.resolved_rows}.csv"
+    if settings.BATCH_ACCEL_DOWNLOADS:
+        response = HttpResponse(content_type="text/csv")
+        response["X-Accel-Redirect"] = f"/protected-batch-exports/{batch.pk}/{path.name}"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    else:
+        response = FileResponse(path.open("rb"), as_attachment=True, filename=filename, content_type="text/csv")
+    response["ETag"] = f'"{snapshot.export_sha256}"'
+    response["X-Export-Rows"] = str(snapshot.resolved_rows)
+    Event.objects.create(batch=batch, actor=request.user, action="partial_export_downloaded",
+                         message=f"Partial CSV: {snapshot.resolved_rows} resolved numbers.")
     return response

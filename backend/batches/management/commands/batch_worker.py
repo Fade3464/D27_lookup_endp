@@ -7,6 +7,7 @@ from django.db import close_old_connections
 
 from batches.files import LostLease, build_export, claim_file_task, import_csv
 from batches.notifications import deliver_one
+from batches.partial_exports import build_partial_export, claim_partial_export, fail_partial_export
 from batches.queue import claim_number, finish_number, pause_all
 from batches.upstream import lookup_number
 
@@ -30,9 +31,11 @@ class Command(BaseCommand):
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
         role = options["role"]
+        prefer_partial = True
         self.stdout.write(f"CSV worker ready: {role}")
         while not stopping:
             work = False
+            partial = None
             try:
                 close_old_connections()
                 if role == "lookup":
@@ -41,8 +44,17 @@ class Command(BaseCommand):
                         work = True
                         finish_number(claim, lookup_number(claim["ani"]))
                 elif role == "files":
-                    task = claim_file_task()
-                    if task:
+                    # Alternate task types so downloads and imports cannot starve
+                    # one another. Neither uses the lookup worker's HTTP slot.
+                    partial = claim_partial_export() if prefer_partial else None
+                    task = None if partial else claim_file_task()
+                    if not task and not partial:
+                        partial = claim_partial_export()
+                    prefer_partial = not prefer_partial
+                    if partial:
+                        work = True
+                        build_partial_export(partial)
+                    elif task:
                         work = True
                         (import_csv if task.status == "preprocessing" else build_export)(task)
                 else:
@@ -50,9 +62,16 @@ class Command(BaseCommand):
             except LostLease:
                 logger.warning("File worker lease changed; stale task stopped.")
             except Exception:
-                logger.exception("CSV worker failure; stopping lookup queues.")
-                if role == "alerts":
-                    # Discord delivery is isolated: it must never start or stop lookups.
+                logger.exception("CSV worker failure.")
+                if role == "alerts" or partial is not None:
+                    # Notifications and partial downloads do not control lookups.
+                    if partial is not None:
+                        try:
+                            fail_partial_export(partial, "Unable to prepare the partial CSV. Try again.")
+                        except LostLease:
+                            pass
+                        except Exception:
+                            logger.exception("Could not persist partial export failure; its lease will expire.")
                     if options["once"]:
                         return
                     time.sleep(1)

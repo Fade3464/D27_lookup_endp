@@ -55,6 +55,29 @@ class Batch(models.Model):
         ]
 
 
+class PartialExport(models.Model):
+    """Immutable progress snapshot, independent of the batch's processing state."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(Batch, on_delete=models.CASCADE)
+    status = models.CharField(max_length=16, default="queued", choices=[
+        ("queued", "Queued"), ("building", "Building"), ("ready", "Ready"), ("failed", "Failed")])
+    resolved_rows = models.PositiveBigIntegerField()
+    good_rows = models.PositiveBigIntegerField()
+    bad_rows = models.PositiveBigIntegerField()
+    cutoff_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    task_token = models.UUIDField(null=True, blank=True)
+    task_expires_at = models.DateTimeField(null=True, blank=True)
+    export_bytes = models.PositiveBigIntegerField(default=0)
+    export_sha256 = models.CharField(max_length=64, blank=True)
+    error = models.CharField(max_length=350, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["batch", "resolved_rows"], name="unique_partial_progress")]
+        indexes = [models.Index(fields=["status", "task_expires_at"])]
+
+
 class UserQueue(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, primary_key=True, on_delete=models.PROTECT)
     enabled = models.BooleanField(default=True)

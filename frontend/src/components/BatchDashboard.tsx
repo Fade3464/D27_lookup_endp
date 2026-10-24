@@ -4,7 +4,8 @@ import { api, ApiError, type User } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
-type Job = { id: string; name: string; status: string; pause_reason: string; total_rows: number; valid_rows: number; cleaned_rows: number; rejected_rows: number; processed_rows: number; resolved_rows: number; good_rows: number; bad_rows: number; mixed_rows: number; error_rows: number; progress: number; error: string; created_at: string; export_bytes: number; download_url: string | null }
+type PartialCSV = { id: string; status: "queued" | "building" | "ready" | "failed"; resolved_rows: number; good_rows: number; bad_rows: number; cutoff_at: string; error: string; download_url: string | null }
+type Job = { partial_export?: PartialCSV | null; id: string; name: string; status: string; pause_reason: string; total_rows: number; valid_rows: number; cleaned_rows: number; rejected_rows: number; processed_rows: number; resolved_rows: number; good_rows: number; bad_rows: number; mixed_rows: number; error_rows: number; progress: number; error: string; created_at: string; export_bytes: number; download_url: string | null }
 type Dashboard = { results: Job[]; active: Job[]; count: number; page: number; pages: number; queue: { enabled: boolean; awaiting_decision: boolean }; safety: { paused: boolean; reason: string; notification: string | null; notification_error: string; discord_configured: boolean } }
 type Detail = { batch: Job; rows: { sequence: number; source_row: number; ani: string; status: string; attempts: number; accepted_1: number | null; accepted_2: number | null; error: string }[]; next_cursor: number | null; events: { action: string; message: string; created_at: string }[] }
 const statusNames: Record<string, string> = { uploaded: "Awaiting cleanup", preprocessing: "Cleaning CSV", queued: "Queued", running: "Looking up", pausing: "Finishing current lookup", paused: "Paused", review: "Needs retry", export_pending: "Export queued", exporting: "Building export", export_failed: "Export failed", completed: "Ready to download", invalid: "Invalid CSV" }
@@ -83,6 +84,22 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
       }
     } catch (e) { handleError(e) } finally { setBusy("") }
   }
+  async function preparePartial(job: Job) {
+    setBusy(job.id); setError(""); setNotice("")
+    try {
+      const snapshot = preview ? {
+        id: "preview-partial", status: "ready" as const, resolved_rows: job.resolved_rows,
+        good_rows: job.good_rows, bad_rows: job.bad_rows, cutoff_at: new Date().toISOString(),
+        error: "", download_url: null,
+      } : await api<PartialCSV>(`batches/${job.id}/partial-export/`, {})
+      setData(current => current ? { ...current,
+        results: current.results.map(row => row.id === job.id ? { ...row, partial_export: snapshot } : row),
+        active: current.active.map(row => row.id === job.id ? { ...row, partial_export: snapshot } : row),
+      } : current)
+      setNotice(preview ? "Design preview only. No file was generated." : `Partial CSV: ${number(snapshot.resolved_rows)} completed numbers. Pending lookups and errors are excluded.`)
+      if (!preview) setRevision(v => v + 1)
+    } catch (e) { handleError(e) } finally { setBusy("") }
+  }
   async function deleteJob() {
     if (!confirmDelete || deleting.current) return
     deleting.current = true
@@ -137,6 +154,10 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
     {job.status === "export_failed" && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => control(job, "retry_export")}><RotateCcw />Retry Export</Button>}
     {job.status === "completed" && (preview ? <Button size="sm" variant="outline" onClick={() => setNotice("This sample export is for design review only.")}><Download />Download</Button> : <Button size="sm" variant="outline" asChild><a href={job.download_url || "#"}><Download />Download</a></Button>)}
     {["uploaded", "queued", "paused", "review"].includes(job.status) && <Button size="sm" variant="ghost" className="batch-delete" aria-label={`Delete ${job.name}`} disabled={Boolean(busy)} onClick={() => { setError(""); setConfirmDelete(job) }}><Trash2 />Delete</Button>}
+    {job.partial_export && ["queued", "building"].includes(job.partial_export.status) && <Button size="sm" variant="outline" disabled><Loader2 className="animate-spin" />Preparing Partial CSV ({number(job.partial_export.resolved_rows)})</Button>}
+    {job.partial_export?.status === "ready" && (preview ? <Button size="sm" variant="outline" onClick={() => setNotice("Design preview only. No file is downloaded.")}><Download />Download Partial CSV ({number(job.partial_export.resolved_rows)})</Button> : <Button size="sm" variant="outline" asChild><a href={job.partial_export.download_url || "#"} aria-label={`Download partial CSV with ${job.partial_export.resolved_rows} completed numbers`}><Download />Download Partial CSV ({number(job.partial_export.resolved_rows)})</a></Button>)}
+    {["paused", "review"].includes(job.status) && job.resolved_rows > 0 && !["queued", "building"].includes(job.partial_export?.status || "") && (job.partial_export?.status !== "ready" || job.partial_export.resolved_rows !== job.resolved_rows) && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => preparePartial(job)}><Download />{job.partial_export?.status === "failed" ? "Retry Partial CSV" : "Prepare Partial CSV"}</Button>}
+    {job.partial_export?.status === "failed" && <span className="batch-error" role="status">{job.partial_export.error}</span>}
     <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => inspect(job)}>Track<ChevronRight /></Button>
   </div>
   return <div className="batch-dashboard">

@@ -14,11 +14,71 @@ from batches.files import build_export, claim_file_task, export_path, import_csv
 from batches.models import Batch, Number, Engine
 from batches.queue import claim_number, finish_number, control_batch
 from batches.upstream import Result
+from batches.partial_exports import build_partial_export, claim_partial_export, partial_path, request_partial
+from django.utils import timezone
 
 
 @skipUnless(connection.vendor == "postgresql", "PostgreSQL row-lock test")
 @override_settings(BATCH_LOOKUP_INTERVAL=0)
 class ConcurrencyTests(TransactionTestCase):
+    def test_partial_request_during_publication_does_not_deadlock(self):
+        user = get_user_model().objects.create_user("partial-publish-race")
+        batch = Batch.objects.create(user=user, original_name="test.csv", source_sha256="", status="paused", valid_rows=1, good_rows=1)
+        Number.objects.create(batch=batch, sequence=1, source_row=1, ani="2345678901", status="good", completed_at=timezone.now())
+        snapshot = request_partial(batch.pk, user)
+        task = claim_partial_export()
+        barrier = threading.Barrier(2)
+        errors = []
+        def run(action):
+            try:
+                close_old_connections()
+                with connection.cursor() as cursor:
+                    cursor.execute("SET lock_timeout = '5s'")
+                barrier.wait(timeout=10)
+                if action == "build":
+                    build_partial_export(task)
+                else:
+                    request_partial(batch.pk, user)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        threads = [threading.Thread(target=run, args=(action,)) for action in ("build", "request")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.status, "ready")
+
+    def test_only_one_file_worker_claims_a_partial_export(self):
+        user = get_user_model().objects.create_user("partial-race")
+        batch = Batch.objects.create(user=user, original_name="test.csv", source_sha256="", status="paused", valid_rows=1, good_rows=1)
+        Number.objects.create(batch=batch, sequence=1, source_row=1, ani="2345678901", status="good", completed_at=timezone.now())
+        request_partial(batch.pk, user)
+        barrier = threading.Barrier(2)
+        claims, errors = [], []
+        def claim():
+            try:
+                close_old_connections()
+                barrier.wait(timeout=10)
+                claims.append(claim_partial_export())
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        threads = [threading.Thread(target=claim) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(sum(value is not None for value in claims), 1)
+        build_partial_export(next(value for value in claims if value))
+
     def test_delete_and_worker_claim_are_serialized(self):
         from batches.models import UserQueue
         user = get_user_model().objects.create_user("delete-race")
@@ -104,8 +164,23 @@ class LargeFileTests(TransactionTestCase):
             self.assertEqual(batch.valid_rows, 500000)
             self.assertEqual(Number.objects.filter(batch=batch).count(), 500000)
             # Simulate resolved rows; the load test never hits the real API.
-            Number.objects.filter(batch=batch).update(status="good", accepted_1=1, accepted_2=1, raw_response='{"synthetic":true}')
-            Batch.objects.filter(pk=batch.pk).update(status="export_pending", good_rows=500000, processed_rows=500000)
+            Number.objects.filter(batch=batch, sequence__lte=300000).update(status="good", accepted_1=1, accepted_2=1,
+                completed_at=timezone.now()-timedelta(seconds=1), raw_response='{"synthetic":true}')
+            Batch.objects.filter(pk=batch.pk).update(status="paused", good_rows=300000, processed_rows=300000)
+            snapshot = request_partial(batch.pk, user)
+            # Simulate resumed processing before the snapshot is built: later
+            # successful results must stay out of the already requested CSV.
+            Number.objects.filter(batch=batch, sequence__gt=300000).update(status="good", accepted_1=1, accepted_2=1,
+                completed_at=timezone.now(), raw_response='{"synthetic":true}')
+            Batch.objects.filter(pk=batch.pk).update(status="running", good_rows=500000, processed_rows=500000)
+            build_partial_export(claim_partial_export())
+            snapshot.refresh_from_db()
+            self.assertEqual(snapshot.status, "ready")
+            with partial_path(snapshot).open() as file:
+                rows = csv.reader(file)
+                self.assertEqual(next(rows), ["sqGOOD", "sqBAD"])
+                self.assertEqual(sum(1 for row in rows if row == ["2345678901", ""]), 300000)
+            Batch.objects.filter(pk=batch.pk).update(status="export_pending")
             build_export(claim_file_task())
             batch.refresh_from_db()
             self.assertEqual(batch.status, "completed")

@@ -136,3 +136,40 @@ Production still requires HTTPS, non-debug settings, correct allowed hosts and
 CSRF origins, Discord configuration, backups, and deployment-specific monitoring.
 Nginx's upload limit must be increased alongside `BATCH_MAX_UPLOAD_BYTES` if
 raising it above 100 MB.
+
+## Download completed progress from a paused file
+
+After the current lookup finishes and the file shows **Paused**, choose
+**Prepare Partial CSV**. The file worker creates a snapshot in the background.
+The button shows **Preparing Partial CSV**, then **Download Partial CSV (N)**
+with the number of included results. Files in **Needs retry** can also export
+already resolved results. There is no partial export when zero numbers have
+been classified successfully.
+
+The CSV still has exactly `sqGOOD,sqBAD`. Both campaigns accepting puts the
+number in `sqGOOD`; either campaign rejecting, including mixed decisions, puts
+it in `sqBAD`. Pending, in-flight and unresolved-error rows are excluded.
+Input order and duplicates are preserved. The filename contains `partial-N`
+to distinguish it from the final, complete-file export.
+
+A snapshot's result count and cutoff are captured under the lookup engine's
+transaction lock. Successful classifications are immutable; resumed lookups and
+retries complete after the cutoff and cannot enter that snapshot. You can
+resume processing while it builds or download it after resuming. Its displayed
+count stays fixed. Pause again after more progress to prepare a newer snapshot;
+older snapshot URLs remain available to the owner until the job is deleted.
+
+Requests with the same saved progress reuse the existing snapshot, including
+concurrent requests. A new progress checkpoint creates a new cached CSV.
+Preparation runs in bounded keyset pages in the existing file worker, alternating
+with uploads/final exports. Download and dashboard requests read only snapshot
+metadata, not all phone records. Repeated downloads use the prepared file and
+Nginx's existing authenticated internal-export location. Partial-export failures
+are retryable and do not resume, complete, or safety-pause lookup jobs.
+
+Partial exports use durable task leases, row-count and good/bad count checks,
+SHA-256 checksums, and atomic file publication. The database and existing export
+storage paths must both be backed up; snapshots are included in those same
+backups. No new Nginx configuration or extra worker service is required.
+Deploy migration `batches.0003_partialexport` before restarting the updated
+backend/file workers, and rebuild/publish the frontend.
