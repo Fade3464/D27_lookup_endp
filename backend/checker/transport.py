@@ -15,7 +15,8 @@ relay_opener = build_opener(NoRedirects())
 
 def lookup_request(ani):
     request = Request(settings.LOOKUP_URL, data=json.dumps({"ani": ani}).encode(), method="POST",
-                      headers={"Content-Type": "application/json", "Accept": "application/json"})
+                      headers={"Content-Type": "application/json", "Accept": "application/json",
+                               "User-Agent": "D27Desk/1.0"})
     if settings.LOOKUP_RELAY_TOKEN:
         request.add_unredirected_header("Authorization", f"Bearer {settings.LOOKUP_RELAY_TOKEN}")
     return request

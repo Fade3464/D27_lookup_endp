@@ -131,6 +131,27 @@ decisions. Worker plan quotas still apply.
 
 ## Local verification
 
+### Worker hostname returns Cloudflare error 1010
+
+Cloudflare Browser Integrity Check can reject Python's default `urllib` user
+agent on `workers.dev` before the Worker runs. The app sends the descriptive
+`User-Agent: D27Desk/1.0` header on lookup requests, as recommended in
+[Cloudflare's error 1010 documentation](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/#requests-to-pages-projects-or-workersdev).
+If an older deployment gets this error, rebuild the backend and recreate all four
+app services using the commands above. Keep queues paused until a single lookup
+works. Do not keep retrying an unchanged blocked request. No token change is
+needed for this user-agent correction; token validity is only established after
+the request reaches the Worker.
+
+Cloudflare says these managed `workers.dev` blocks do not appear in your zone's
+Security Events or Worker logs, and its Browser Integrity Check cannot be
+disabled there. If the error continues, serve the Worker on a Custom Domain in
+your zone and configure Browser Integrity Check specifically for that service,
+then change `LOOKUP_RELAY_URL` and recreate the app services. Retain Bearer
+authentication. Do not disable security across unrelated sites.
+
+### Run tests
+
 ```bash
 node deploy/worker/worker.test.mjs
 .venv/bin/python backend/manage.py test checker batches --settings=config.settings_test

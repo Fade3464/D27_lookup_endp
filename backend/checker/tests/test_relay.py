@@ -50,6 +50,7 @@ class ConfigurationTests(SimpleTestCase):
     def test_direct_transport_has_no_auth(self):
         request = lookup_request("0123456789")
         self.assertIsNone(request.get_header("Authorization"))
+        self.assertEqual(request.get_header("User-agent"), "D27Desk/1.0")
         direct = Mock(return_value="response")
         self.assertEqual(open_lookup(request, direct), "response")
         direct.assert_called_once_with(request, timeout=20)
@@ -89,6 +90,7 @@ class RelayTests(TestCase):
     def assert_request(self, send):
         request = send.call_args.args[0]
         self.assertEqual(request.full_url, RELAY_URL)
+        self.assertEqual(request.get_header("User-agent"), "D27Desk/1.0")
         self.assertEqual(request.get_header("Authorization"), f"Bearer {TOKEN}")
         self.assertEqual(json.loads(request.data), {"ani": "2345678901"})
         self.assertNotIn("Authorization", request.headers)
