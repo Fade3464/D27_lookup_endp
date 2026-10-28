@@ -90,7 +90,7 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 16384
-LOOKUP_URL = "https://one.marstools.co/d27supressioncheck/ping.php"
+LOOKUP_URL = "https://marstools.co/d27suppressioncheck/ping.php"
 LOOKUP_TIMEOUT = 20
 
 # Files live outside the public document root. Downloads are authorized by Django

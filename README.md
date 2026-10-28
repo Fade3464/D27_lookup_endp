@@ -74,7 +74,7 @@ pause/resume, safety stops, Discord, storage and large-file validation.
 The fixed upstream endpoint is:
 
 ```bash
-curl -sS 'https://one.marstools.co/d27supressioncheck/ping.php' \
+curl -sS 'https://marstools.co/d27suppressioncheck/ping.php' \
   -H 'Content-Type: application/json' \
   -d '{"ani":"2345678901"}'
 ```

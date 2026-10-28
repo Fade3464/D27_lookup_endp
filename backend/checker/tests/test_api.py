@@ -43,7 +43,7 @@ class LookupTests(TestCase):
         self.assertIsNotNone(record.completed_at)
         request = opener.call_args.args[0]
         self.assertEqual(json.loads(request.data), {"ani": "2345678901"})
-        self.assertEqual(request.full_url, "https://one.marstools.co/d27supressioncheck/ping.php")
+        self.assertEqual(request.full_url, "https://marstools.co/d27suppressioncheck/ping.php")
 
     def test_second_campaign(self):
         with patch("checker.services.urlopen", return_value=UpstreamResponse(json.dumps(EXAMPLE_RESPONSE).encode())):
