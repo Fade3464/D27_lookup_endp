@@ -1,8 +1,9 @@
 # Production deployment: host Nginx + containerized app
 
 This guide targets a single Linux server with Docker Engine, the Docker Compose
-plugin, and host-installed Nginx and Certbot. It assumes DNS points directly to
-this server, without another CDN or load balancer in front.
+plugin, and host-installed Nginx and Certbot. The Nginx site supports direct DNS
+and Cloudflare proxying. For Cloudflare, follow the complete
+[Cloudflare update commands](cloudflare-deployment.md) and use Full (strict).
 
 ```text
 Internet → host Nginx :443
@@ -189,8 +190,9 @@ files, CSRF-compatible forwarding headers, login/authenticated-lookup request
 limits, and protected export downloads. **The public individual lookup endpoint
 is not rate limited by the app or Nginx.** The upstream service may still return
 HTTP 429, which the app reports as an unverified check. Nginx replaces incoming
-forwarding headers before sending requests to Gunicorn. Do not expose port 18000 publicly or insert a CDN without
-configuring trusted client-IP handling first.
+forwarding headers before sending requests to Gunicorn. Keep port 18000 private. The site restores Cloudflare
+visitor IPs only from Cloudflare's published IPv4/IPv6 ranges; other proxies
+require their own trust configuration.
 
 Upload requests allow a 100 MiB CSV plus multipart overhead; other requests are
 limited to 16 KiB. If increasing `BATCH_MAX_UPLOAD_BYTES`, increase the upload

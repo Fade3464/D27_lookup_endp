@@ -51,6 +51,7 @@ Use the standalone [production Compose stack](compose.production.yaml) with
 **host Nginx**. The [deployment guide](docs/production-deployment.md) covers TLS,
 configuration, startup, verification, updates, and backups. The host site config
 is [deploy/nginx/d27-production.conf](deploy/nginx/d27-production.conf).
+For Cloudflare proxying, use the [complete Cloudflare update commands](docs/cloudflare-deployment.md).
 
 ## UI design review
 

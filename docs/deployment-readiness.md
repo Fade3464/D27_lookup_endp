@@ -91,3 +91,14 @@ lease blocking, CSRF/type checks, and safe Discord error reporting. Frontend
 build and component checks passed for live permission refresh, retry-consent
 reset, cancellation, lease errors, and success feedback. No migration is needed
 for this update, and no live lookup or Discord calls were made by its tests.
+
+Cloudflare host-Nginx update — 28 October 2026: the complete production site
+passed Nginx syntax validation using a temporary certificate. Isolated HTTP
+checks verified rejection of forged Cloudflare visitor-IP headers from an
+untrusted peer, visitor-IP restoration with a simulated trusted proxy, per-client
+login limits, unthrottled public lookup, private API/export cache headers,
+protected internal-export denial, SPA revalidation and long-lived hashed-asset
+browser caching. Production trusts only the official Cloudflare IPv4/IPv6
+ranges; the loopback trust used in simulation was never added to production.
+Temporary validation containers were removed. Real Cloudflare DNS, SSL and
+cache rules must be applied by the operator using docs/cloudflare-deployment.md.
