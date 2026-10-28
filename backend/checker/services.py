@@ -1,11 +1,11 @@
 import json
 import re
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
-from django.conf import settings
 from django.utils import timezone
 from .models import Lookup
+from .transport import lookup_request, open_lookup
 
 
 def normalize_ani(value):
@@ -26,11 +26,10 @@ def perform_lookup(*, user, campaign, ani):
         user=user, campaign=campaign, campaign_id_sent=campaign.campaign_id,
         campaign_label=campaign.label, ani=ani, request_payload={"ani": ani},
     )
-    request = Request(settings.LOOKUP_URL, data=json.dumps(record.request_payload).encode(),
-                      headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    request = lookup_request(ani)
     try:
         try:
-            response = urlopen(request, timeout=settings.LOOKUP_TIMEOUT)
+            response = open_lookup(request, urlopen)
         except HTTPError as exc:
             response = exc
         with response:

@@ -146,6 +146,44 @@ rules or use DNS-01 renewal. Do not disable certificate verification.
 If the certificate files do not exist, use the bootstrap/certificate steps in
 [the main deployment guide](production-deployment.md) before this update.
 
+## Cloudflare returns a branded 403 block page
+
+A Cloudflare page saying **Sorry, you have been blocked** identifies an edge
+security rejection. Cache-bypass rules and origin `set_real_ip_from` directives
+do not override it. In the zone's Security Events, filter by the response's
+`CF-Ray` value, hostname, and UTC timestamp. Inspect the service, action, and
+matched rule before changing an exception. A server-side curl request may be
+blocked because of its source IP or automation detection even if a browser on
+another network works. Do not infer the exact blocking rule from the 403 alone.
+
+Verify the origin independently from the server, preserving TLS verification:
+
+```bash
+curl --resolve d27desk.peoplegraph.co:443:127.0.0.1 \
+  -I https://d27desk.peoplegraph.co/lookup-record
+curl --resolve d27desk.peoplegraph.co:443:127.0.0.1 \
+  -i https://d27desk.peoplegraph.co/api/history/
+```
+
+Expected statuses are 200 and 401. If those work but public proxied requests
+return the branded 403, adjust the specific Cloudflare rule identified in the
+event, scoped to the legitimate traffic/hostname. Keep Full (strict) enabled.
+
+The supplied Nginx site opens `/var/log/nginx/d27.access.log` and
+`/var/log/nginx/d27.error.log`. If they are missing, verify that the current
+site file is installed and Nginx successfully loaded it:
+
+```bash
+cd /srv/D27_lookup_endp
+install -m 644 deploy/nginx/d27-production.conf /etc/nginx/sites-available/d27
+ln -sfn /etc/nginx/sites-available/d27 /etc/nginx/sites-enabled/d27
+nginx -t && systemctl reload nginx
+nginx -T 2>&1 | grep -nE 'server_name d27desk\.peoplegraph\.co|d27\.(access|error)\.log|real_ip_header CF-Connecting-IP'
+```
+
+Do not create empty log files as a substitute for loading the configuration.
+Blocked edge requests need not appear in the origin's access log.
+
 ## Sources
 
 - [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)

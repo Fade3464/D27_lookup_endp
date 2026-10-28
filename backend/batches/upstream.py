@@ -2,9 +2,10 @@
 import json
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from django.conf import settings
+from checker.transport import lookup_request, open_lookup
 
 
 @dataclass
@@ -22,12 +23,11 @@ def _invalid_constant(value):
 
 
 def lookup_number(ani):
-    request = Request(settings.LOOKUP_URL, data=json.dumps({"ani": ani}).encode(), method="POST",
-                      headers={"Content-Type": "application/json", "Accept": "application/json"})
+    request = lookup_request(ani)
     raw, code = "", None
     try:
         try:
-            response = urlopen(request, timeout=settings.LOOKUP_TIMEOUT)
+            response = open_lookup(request, urlopen)
         except HTTPError as exc:
             response = exc
         with response:

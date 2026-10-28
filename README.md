@@ -52,6 +52,9 @@ Use the standalone [production Compose stack](compose.production.yaml) with
 configuration, startup, verification, updates, and backups. The host site config
 is [deploy/nginx/d27-production.conf](deploy/nginx/d27-production.conf).
 For Cloudflare proxying, use the [complete Cloudflare update commands](docs/cloudflare-deployment.md).
+For outgoing lookups through your authenticated Worker, follow the
+[Worker relay deployment guide](docs/worker-relay.md). This applies to public,
+portal, and CSV checks; the relay token stays on the backend.
 
 ## UI design review
 
