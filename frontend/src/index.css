@@ -391,3 +391,6 @@ svg { flex-shrink: 0; }
 .batch-delete { color: var(--danger); }
 .batch-delete-confirm { background: var(--danger); color: var(--primary-foreground); }
 .batch-delete-confirm:hover { background: var(--danger); filter: brightness(.92); }
+
+.safety-retry-option { display: flex; align-items: flex-start; gap: .625rem; margin: 1rem 0; font-size: .875rem; }
+.safety-retry-option input { width: 1rem; height: 1rem; min-height: 1rem; flex-shrink: 0; margin-top: .125rem; accent-color: var(--primary); }

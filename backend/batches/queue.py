@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, F, OuterRef
 from django.utils import timezone
 
 from .models import Alert, Batch, Engine, Event, Failure, Number, UserQueue
@@ -38,13 +38,15 @@ def pause_all(reason):
         stop_engine(engine, reason, engine.active_batch)
 
 
-def clear_safety(actor):
+def clear_safety(actor, retry_failed=False):
     if not actor.is_staff or not actor.has_perm("batches.resume_safety_stop"):
         raise PermissionError("Staff safety-resume permission is required.")
+    if type(retry_failed) is not bool:
+        raise ValueError("Specify whether failed lookups should be retried.")
     with transaction.atomic():
         engine = engine_lock()
         if not engine.paused:
-            return
+            return {"resumed_files": 0, "retried_rows": 0}
         if engine.active_number_id and engine.lease_expires_at and engine.lease_expires_at > timezone.now():
             raise ValueError("Wait for the current lookup lease to expire before resuming.")
         if engine.active_number_id:
@@ -64,8 +66,20 @@ def clear_safety(actor):
         engine.lease_expires_at = None
         engine.save()
         batch_ids = list(Batch.objects.filter(status="paused", pause_reason="safety").values_list("pk", flat=True))
+        retried = 0
+        if retry_failed:
+            errors = Number.objects.filter(batch_id__in=batch_ids, status="error")
+            counts = list(errors.values("batch_id").annotate(count=Count("id")))
+            retried = errors.update(status="pending")
+            for entry in counts:
+                Batch.objects.filter(pk=entry["batch_id"]).update(
+                    processed_rows=F("processed_rows") - entry["count"],
+                    error_rows=F("error_rows") - entry["count"], error_message="")
+            Event.objects.bulk_create([Event(batch_id=entry["batch_id"], actor=actor,
+                action="safety_retry_queued", message=f'{entry["count"]} failed lookups queued for retry.') for entry in counts])
         Batch.objects.filter(pk__in=batch_ids).update(status="queued", pause_reason="")
         Event.objects.bulk_create([Event(batch_id=pk, actor=actor, action="safety_resumed") for pk in batch_ids])
+        return {"resumed_files": len(batch_ids), "retried_rows": retried}
 
 
 def control_batch(batch_id, user, action):
@@ -249,6 +263,7 @@ def finish_number(claim, result):
         engine.lease_expires_at = None
         engine.save()
         if result.kind in ("abnormal", "rate_limited") or engine.consecutive_errors >= settings.BATCH_ERROR_LIMIT:
-            reason = result.message if result.kind != "error" else f"{engine.consecutive_errors} consecutive upstream lookup failures."
+            reason = result.message if result.kind != "error" else (
+                f"{engine.consecutive_errors} consecutive upstream lookup failures. Last error: {result.message or 'Unknown service failure.'}")
             stop_engine(engine, reason, batch.pk)
         return True

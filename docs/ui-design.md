@@ -139,3 +139,14 @@ still-pausing jobs cannot request a new snapshot. Inline feedback identifies
 excluded pending/error rows; no extra confirmation modal is used. Preview
 controls remain in memory and make no API requests. Component checks covered
 these states; screenshot/layout verification was not performed in this session.
+
+## Staff safety recovery
+
+The safety banner shows a disabled Staff Recovery Required control and an
+access explanation when recovery permission is absent. Authorized staff get
+Review & Resume All Queues. Permission changes are reflected by dashboard
+polling. The centered confirmation retains Cancel as its initial focus and an
+initially unchecked, explicitly labeled option to retry failed lookups.
+Discord failure detail is shown inline without exposing the webhook URL.
+Component checks cover permission changes, consent reset, cancellation, lease
+errors and success. Recovery remains manual; no automatic cooldown is added.

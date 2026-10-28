@@ -1,5 +1,6 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from .models import Alert, Batch, Engine, Event, Failure, Number, PartialExport, UserQueue
+from .queue import clear_safety
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -49,7 +50,37 @@ class AlertAdmin(ReadOnlyAdmin):
     list_display = ["id", "status", "attempts", "created_at", "sent_at"]
 
 
-admin.site.register(Engine, ReadOnlyAdmin)
+@admin.register(Engine)
+class EngineAdmin(ReadOnlyAdmin):
+    list_display = ["id", "paused", "reason", "consecutive_errors", "paused_at"]
+    actions = ["resume_queues", "resume_and_retry"]
+
+    def has_resume_safety_permission(self, request):
+        return request.user.is_staff and request.user.has_perm("batches.resume_safety_stop")
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_resume_safety_permission(request) or super().has_view_permission(request, obj)
+
+    def recover(self, request, queryset, retry_failed):
+        if not queryset.filter(pk=1).exists():
+            return
+        try:
+            result = clear_safety(request.user, retry_failed=retry_failed)
+        except (PermissionError, ValueError) as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+        else:
+            self.message_user(request, f'Resumed {result["resumed_files"]} files. '
+                f'Queued {result["retried_rows"]} failed lookups for retry.', level=messages.SUCCESS)
+
+    @admin.action(permissions=["resume_safety"], description="Resume safety-stopped queues (keep failed rows for review)")
+    def resume_queues(self, request, queryset):
+        self.recover(request, queryset, False)
+
+    @admin.action(permissions=["resume_safety"], description="Resume safety-stopped queues and retry failed lookups")
+    def resume_and_retry(self, request, queryset):
+        self.recover(request, queryset, True)
+
+
 admin.site.register(UserQueue, ReadOnlyAdmin)
 
 

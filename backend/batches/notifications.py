@@ -46,14 +46,17 @@ def deliver_one():
                     raise ValueError("Unexpected webhook status")
             status, error = "sent", ""
         except HTTPError as exc:
+            error = f"Discord returned HTTP {exc.code}; retry scheduled."
             if exc.code == 429:
                 try:
                     wait = json.loads(exc.read(16384)).get("retry_after", 60)
                     delay = min(3600, max(1, float(wait)))
                 except (ValueError, TypeError, AttributeError):
                     delay = 60
-        except (URLError, TimeoutError, OSError, ValueError):
-            pass
+        except (URLError, TimeoutError, OSError):
+            error = "Could not connect to Discord; check DNS, TLS and outbound HTTPS. Retry scheduled."
+        except ValueError:
+            error = "Discord returned an unexpected response; retry scheduled."
     with transaction.atomic():
         current = Alert.objects.select_for_update().get(pk=alert.pk)
         if current.lease_token != token:

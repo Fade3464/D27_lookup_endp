@@ -58,6 +58,7 @@ def dashboard(request):
                          "queue": {"enabled": queue.enabled if queue else True,
                                    "awaiting_decision": queue.awaiting_decision if queue else False},
                          "safety": {"paused": engine.paused if engine else False,
+                                    "can_resume": request.user.is_staff and request.user.has_perm("batches.resume_safety_stop"),
                                     "reason": engine.reason if engine else "",
                                     "notification": alert.status if alert else None,
                                     "notification_error": alert.last_error if alert else "",
@@ -94,12 +95,13 @@ def continue_next(request):
 @authenticated
 def resume_safety(request):
     try:
-        clear_safety(request.user)
+        data = read_json(request)
+        result = clear_safety(request.user, retry_failed=data.get("retry_failed", False))
     except PermissionError as exc:
         return JsonResponse({"error": str(exc)}, status=403)
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=409)
-    return JsonResponse({"ok": True})
+    return JsonResponse({"ok": True, **result})
 
 
 @require_GET

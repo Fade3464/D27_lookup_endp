@@ -81,3 +81,13 @@ exact CSV contents, repeated cached downloads, owner authentication,
 internal-path denial, and preserving the paused state. Temporary HTTP fixtures
 were removed. Deploy migration `batches.0003_partialexport` and rebuild/restart
 the backend/file worker and frontend using the production update steps.
+
+Staff-controlled recovery update — 28 October 2026: 84 PostgreSQL tests were
+run; 83 passed and the opt-in large-file test was skipped. The quick suite
+passed 79 tests with five database/large-file skips. New cases verify strict
+staff-plus-permission access, admin recovery actions, explicit failed-row retry,
+unchanged successful results/manual pauses, retained attempt history, active
+lease blocking, CSRF/type checks, and safe Discord error reporting. Frontend
+build and component checks passed for live permission refresh, retry-consent
+reset, cancellation, lease errors, and success feedback. No migration is needed
+for this update, and no live lookup or Discord calls were made by its tests.

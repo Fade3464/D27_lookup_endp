@@ -52,6 +52,41 @@ Because the external endpoint has no idempotency-key contract, a crash after an
 HTTP request but before saving its response can require repeating that request
 after staff review; exactly-once external delivery cannot be guaranteed.
 
+## Staff recovery after a safety stop
+
+Recovery is manual; there is no cooldown-based automatic resume. A superuser
+already has access. For another operator, an administrator must enable **Staff
+status** and assign **Can resume all queues after a safety stop** under Django
+admin → Users → User permissions. The dashboard refreshes recovery permission
+with its normal polling. Staff status by itself does not grant global recovery.
+
+Before resuming, inspect the recorded failure and fix the upstream issue. The
+safety banner shows the reason and Discord delivery error. A failed Discord
+notification does not disable recovery or discard lookup progress.
+
+In the portal, choose **Review & Resume All Queues**. The confirmation has an
+optional, initially unchecked **Also retry failed lookups in safety-paused
+files** checkbox. With it off, pending lookups continue and failed rows remain
+for later review. With it on, only errors in files paused by this safety stop
+are queued again. Successful results are never repeated; attempt history is
+retained. Manually paused files and disabled user queues remain paused.
+An unexpired lookup lease still blocks recovery until the in-flight request
+can finish or its lease expires.
+
+Alternatively, authorized staff can open Django admin → Engines, select engine
+1, and choose the resume action with or without retrying failed lookups. The
+admin action uses the same permission, lease checks, and audit trail as the
+portal; it does not expose direct editing of engine flags.
+
+Useful production diagnostics (no phone numbers or webhook tokens):
+
+```bash
+d27 exec backend python manage.py shell -c \
+  "from batches.models import Failure; print(list(Failure.objects.order_by('-id').values('kind','http_code','message','created_at')[:10]))"
+d27 exec backend python manage.py shell -c \
+  "from batches.models import Alert; print(Alert.objects.order_by('-id').values('status','last_error','attempts','next_attempt_at').first())"
+```
+
 ## Delete a queued scrub job
 
 Use **Delete** on an uploaded, queued, paused, or retry-review job and confirm

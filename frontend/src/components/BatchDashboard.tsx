@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 type PartialCSV = { id: string; status: "queued" | "building" | "ready" | "failed"; resolved_rows: number; good_rows: number; bad_rows: number; cutoff_at: string; error: string; download_url: string | null }
 type Job = { partial_export?: PartialCSV | null; id: string; name: string; status: string; pause_reason: string; total_rows: number; valid_rows: number; cleaned_rows: number; rejected_rows: number; processed_rows: number; resolved_rows: number; good_rows: number; bad_rows: number; mixed_rows: number; error_rows: number; progress: number; error: string; created_at: string; export_bytes: number; download_url: string | null }
-type Dashboard = { results: Job[]; active: Job[]; count: number; page: number; pages: number; queue: { enabled: boolean; awaiting_decision: boolean }; safety: { paused: boolean; reason: string; notification: string | null; notification_error: string; discord_configured: boolean } }
+type Dashboard = { results: Job[]; active: Job[]; count: number; page: number; pages: number; queue: { enabled: boolean; awaiting_decision: boolean }; safety: { paused: boolean; can_resume?: boolean; reason: string; notification: string | null; notification_error: string; discord_configured: boolean } }
 type Detail = { batch: Job; rows: { sequence: number; source_row: number; ani: string; status: string; attempts: number; accepted_1: number | null; accepted_2: number | null; error: string }[]; next_cursor: number | null; events: { action: string; message: string; created_at: string }[] }
 const statusNames: Record<string, string> = { uploaded: "Awaiting cleanup", preprocessing: "Cleaning CSV", queued: "Queued", running: "Looking up", pausing: "Finishing current lookup", paused: "Paused", review: "Needs retry", export_pending: "Export queued", exporting: "Building export", export_failed: "Export failed", completed: "Ready to download", invalid: "Invalid CSV" }
 const number = (value: number) => value.toLocaleString()
@@ -28,6 +28,7 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
   const [dragging, setDragging] = useState(false)
   const [decision, setDecision] = useState<{ next: string | null } | null>(null)
   const [confirmSafety, setConfirmSafety] = useState(false)
+  const [retrySafetyFailures, setRetrySafetyFailures] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Job | null>(null)
   const deleting = useRef(false)
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -131,7 +132,14 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
   }
   async function resumeSafety() {
     setBusy("safety"); setError("")
-    try { if (!preview) await api("batches/safety/resume/", {}); setConfirmSafety(false); setRevision(v => v + 1) }
+    try {
+      if (preview) setNotice("Design preview only. No queues were resumed.")
+      else {
+        const result = await api<{ resumed_files: number; retried_rows: number }>("batches/safety/resume/", { retry_failed: retrySafetyFailures })
+        setNotice(`Resumed ${number(result.resumed_files)} ${result.resumed_files === 1 ? "file" : "files"}. ${number(result.retried_rows)} failed ${result.retried_rows === 1 ? "lookup" : "lookups"} queued for retry.`)
+      }
+      setConfirmSafety(false); setRevision(v => v + 1)
+    }
     catch (e) { handleError(e) } finally { setBusy("") }
   }
   async function inspect(job: Job, after = 0) {
@@ -146,6 +154,7 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
     if (preview) { setRaw({ preview: true, ani: "2025550148", accepted_1: 1, accepted_2: 1 }); return }
     try { setRaw(await api(`batches/${detail.batch.id}/numbers/${sequence}/`)) } catch (e) { handleError(e) }
   }
+  const canResumeSafety = data?.safety.can_resume ?? user.can_resume_safety ?? false
   const actions = (job: Job) => <div className="batch-actions">
     {["queued", "running"].includes(job.status) && <Button size="sm" variant="outline" disabled={Boolean(busy) || data?.safety.paused} onClick={() => control(job, "pause")}><Pause />Pause</Button>}
     {job.status === "paused" && <Button size="sm" variant="outline" disabled={Boolean(busy) || data?.safety.paused} onClick={() => control(job, "resume")}><Play />Resume</Button>}
@@ -162,7 +171,7 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
   </div>
   return <div className="batch-dashboard">
     {error && <div className="error-message" role="alert">{error}</div>}{notice && <div className="batch-notice" role="status">{notice}</div>}
-    {data?.safety.paused && <section className="safety-banner" role="alert"><ShieldAlert /><div><h2>All lookup queues are safety-paused</h2><p>{data.safety.reason}</p><p>Discord: {data.safety.notification || "pending"}{!data.safety.discord_configured && " · webhook not configured"}. Unresolved numbers remain on record for retry.</p>{user.can_resume_safety ? <Button variant="outline" onClick={() => setConfirmSafety(true)}>Review & Resume All Queues</Button> : <p>A staff member must review and resume processing.</p>}</div></section>}
+    {data?.safety.paused && <section className="safety-banner" role="alert"><ShieldAlert /><div><h2>All lookup queues are safety-paused</h2><p>{data.safety.reason}</p><p>Discord: {data.safety.notification || "pending"}{!data.safety.discord_configured && " · webhook not configured"}.</p>{data.safety.notification_error && <p>{data.safety.notification_error}</p>}{canResumeSafety ? <Button variant="outline" disabled={Boolean(busy)} onClick={() => { setError(""); setRetrySafetyFailures(false); setConfirmSafety(true) }}>Review & Resume All Queues</Button> : <><Button variant="outline" disabled>Staff Recovery Required</Button><p>{user.is_staff ? "Ask an administrator to grant safety recovery access to this account." : "An authorized staff member must review the error and resume processing."}</p></>}</div></section>}
     <Card><CardHeader><CardTitle>Upload a CSV</CardTitle><p className="field-hint">Column one becomes a clean list of 10-digit numbers. Both campaigns are checked for every number.</p></CardHeader><CardContent>
       <div className={`csv-dropzone ${dragging ? "dragging" : ""}`} onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e: DragEvent) => { e.preventDefault(); setDragging(false); choose(e.dataTransfer.files[0]) }}>
         <FileSpreadsheet size={30} strokeWidth={1.5} /><div><strong>{file ? file.name : "Drop your CSV here"}</strong><p>{file ? `${(file.size / (1024 * 1024)).toFixed(2)} MB · ready to upload` : "or choose a file · up to 100 MB"}</p></div>
@@ -178,7 +187,8 @@ export default function BatchDashboard({ user, preview, onUnauthorized }: { user
     {detail && <Card className="batch-detail"><CardHeader className="history-header"><CardTitle>Tracking: {detail.batch.name}</CardTitle><Button variant="ghost" size="icon" aria-label="Close file tracking" onClick={() => { setDetail(null); setRaw(null) }}><X /></Button></CardHeader><CardContent><div className="batch-event-list">{detail.events.map((event, i) => <div key={i}><strong>{event.action.replaceAll("_", " ")}</strong><span>{new Date(event.created_at).toLocaleString()}</span><p>{event.message}</p></div>)}</div><div className="table-scroll"><table className="records-table"><thead><tr><th>CSV Row</th><th>Number</th><th>Result</th><th>Attempts</th><th>Response</th></tr></thead><tbody>{detail.rows.map(row => <tr key={row.sequence}><td>{row.source_row}</td><td>{row.ani}</td><td>{row.status}{row.error && <p className="batch-error">{row.error}</p>}</td><td>{row.attempts}</td><td><Button size="sm" variant="ghost" onClick={() => inspectNumber(row.sequence)}>View Response</Button></td></tr>)}</tbody></table></div>{detail.next_cursor && <Button variant="outline" onClick={() => inspect(detail.batch, detail.next_cursor || 0)}>Next 100 Rows</Button>}{raw !== null && <pre className="json-box">{JSON.stringify(raw, null, 2)}</pre>}</CardContent></Card>}
     <dialog ref={dialog} className="queue-dialog" aria-labelledby="queue-dialog-title" aria-describedby="queue-dialog-description" onCancel={e => { e.preventDefault(); if (!busy) { if (confirmDelete) setConfirmDelete(null); else if (decision) void continueNext(false); else setConfirmSafety(false) } }}>
       <h2 id="queue-dialog-title">{confirmDelete ? "Delete scrub job?" : confirmSafety ? "Resume all lookup queues?" : "Start the next file?"}</h2>
-      <p id="queue-dialog-description">{confirmDelete ? `Remove ${confirmDelete.name} from the dashboard and queue? Audit records will be retained.` : confirmSafety ? "Only continue after reviewing the cause of the safety stop. Manually paused files stay paused; unresolved errors require retry." : decision?.next ? `The current file is paused or finishing its last lookup. Start ${decision.next} next?` : "There are no other files queued. Your current file stays paused with its progress saved."}</p>
+      <p id="queue-dialog-description">{confirmDelete ? `Remove ${confirmDelete.name} from the dashboard and queue? Audit records will be retained.` : confirmSafety ? "Resolve the service error before resuming. Completed results are kept and manually paused files stay paused." : decision?.next ? `The current file is paused or finishing its last lookup. Start ${decision.next} next?` : "There are no other files queued. Your current file stays paused with its progress saved."}</p>
+      {confirmSafety && <label className="safety-retry-option"><input type="checkbox" checked={retrySafetyFailures} disabled={Boolean(busy)} onChange={event => setRetrySafetyFailures(event.target.checked)} />Also retry failed lookups in safety-paused files</label>}
       {error && <p role="alert" className="batch-error">{error}</p>}
       <div className="batch-dialog-actions">
         <Button variant="outline" autoFocus disabled={Boolean(busy)} onClick={() => { if (confirmDelete) setConfirmDelete(null); else if (confirmSafety) setConfirmSafety(false); else void continueNext(false) }}>{confirmDelete || confirmSafety ? "Cancel" : "Keep Queue Paused"}</Button>
