@@ -96,7 +96,7 @@ d27 logs --tail 30 backend lookup_worker file_worker alert_worker
 `security.W021` about HSTS preload is expected; preload is intentionally not
 enabled. Backend/database should be healthy, workers running, and init/build/
 migrate jobs should exit 0. The lookup URL should print
-`https://marstools.co/d27suppressioncheck/ping.php`.
+`https://one.marstools.co/d27supresscheck/ping.php`.
 
 Safety stops are persisted in PostgreSQL. Deployment does not clear them.
 After reviewing/fixing the service failure, an authorized staff account resumes

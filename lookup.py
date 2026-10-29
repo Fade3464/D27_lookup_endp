@@ -20,7 +20,7 @@ def main():
     parser.add_argument("number", help="10-digit ANI; optional leading US country code")
     parser.add_argument(
         "--url",
-        default="https://marstools.co/d27suppressioncheck/ping.php",
+        default="https://one.marstools.co/d27supresscheck/ping.php",
         help="Override the hosted ping.php URL",
     )
     args = parser.parse_args()

@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { relay } from './worker.mjs';
 
 const token = 'test-only-secret-' + 'a'.repeat(48);
@@ -18,7 +18,7 @@ test('valid request uses fixed upstream, fresh headers, one attempt and preserve
     'CF-Connecting-IP': '192.0.2.5', 'X-Forwarded-For': '192.0.2.5', Cookie: 'session=private',
   } }), env, { fetcher: async (url, options) => {
     calls++;
-    assert.equal(url, 'https://marstools.co/d27suppressioncheck/ping.php');
+    assert.equal(url, 'https://one.marstools.co/d27supresscheck/ping.php');
     assert.deepEqual(options.headers, { 'Content-Type': 'application/json', Accept: 'application/json' });
     assert.deepEqual(JSON.parse(options.body), { ani: '0123456789' });
     assert.equal(options.redirect, 'manual');

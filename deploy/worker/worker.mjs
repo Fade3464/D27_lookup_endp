@@ -1,6 +1,6 @@
 // Paste this module into the existing d27-lookup-relay Worker and deploy.
 // Add RELAY_TOKEN as a Cloudflare secret; never put it in this file.
-const UPSTREAM = 'https://marstools.co/d27suppressioncheck/ping.php';
+const UPSTREAM = 'https://one.marstools.co/d27supresscheck/ping.php';
 const encoder = new TextEncoder();
 
 function error(status, message, extra = {}) {

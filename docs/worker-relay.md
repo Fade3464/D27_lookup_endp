@@ -1,7 +1,7 @@
 # Deploy the lookup Worker relay
 
 The request path is: Django / CSV worker → authenticated Cloudflare Worker →
-`https://marstools.co/d27suppressioncheck/ping.php`.
+`https://one.marstools.co/d27supresscheck/ping.php`.
 
 Both campaigns still use one upstream request per number. Public lookup,
 authenticated campaign lookup, CSV processing, response validation, audit records,
