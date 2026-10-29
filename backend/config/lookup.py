@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
 
-DIRECT_LOOKUP_URL = "https://one.marstools.co/d27supresscheck//ping.php"
+DIRECT_LOOKUP_URL = "https://one.marstools.co/d27supresscheck/ping.php"
 
 
 def lookup_config(environ):
